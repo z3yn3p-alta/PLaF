@@ -2,17 +2,41 @@
 
 (* expressed values and environments are defined mutually recursively *)
 
+type 'a tree = Empty | Node of 'a * 'a tree * 'a tree
 
 type exp_val =
   | NumVal of int
   | BoolVal of bool
-  | PairVal of exp_val*exp_val
+  | PairVal of exp_val * exp_val
   | TupleVal of exp_val list
-type env =
+  | TreeVal of exp_val tree
+  | RecordVal of ( string * exp_val) list
+  | Proj of string
+  | ProcVal of string*exp_val*env
+and
+  env =
   | EmptyEnv
   | ExtendEnv of string*exp_val*env
 
 
+(*
+type expr =
+  | Var of string
+  | Int of int
+  | Add of expr * expr
+  | Mul of expr * expr
+  | Div of expr * expr
+  | Sub of expr * expr
+  | Let of string * expr * expr
+  | IsZero of expr
+  | ITE of expr * expr * expr
+  | EmptyTree of expr option
+  | Node of expr * expr * expr
+  | CaseT of expr * expr * string * string * string * expr
+  | IsEmpty of expr
+  | Record of (string * (bool * expr)) list
+  | Proj of expr * string
+*)
 (* Environment Abstracted Result *)
 
 type 'a result = Ok of 'a | Error of string
@@ -56,7 +80,8 @@ let rec sequence : 'a ea_result list -> 'a list ea_result =
     h >>= fun ev ->
     sequence t >>= fun evs ->
     return (ev::evs)
-      
+    
+
 (* Operations on environments *)
 
 let empty_env : unit -> env ea_result = fun () ->
@@ -106,15 +131,32 @@ let list_of_tupleVal : exp_val -> (exp_val list)  ea_result =  function
 let pair_of_pairVal : exp_val -> (exp_val*exp_val) ea_result =  function
   |  PairVal(ev1,ev2) -> return (ev1,ev2)
   | _ -> error "Expected a pair!"
-           
+        
+let clos_of_procVal : exp_val -> (string*exp_val*env) ea_result =
+    fun ev -> 
+    match ev with
+    | ProcVal(id,body,en) -> return (id,body,en)
+    | _ -> error "Expected a closure!"
+
 let rec string_of_expval = function
   | NumVal n -> "NumVal " ^ string_of_int n
   | BoolVal b -> "BoolVal " ^ string_of_bool b
   | PairVal (ev1,ev2) -> "PairVal("^string_of_expval ev1
                          ^","^ string_of_expval ev2^")"
   | TupleVal evs -> "TupleVal("^String.concat "," (List.map string_of_expval evs)^")"
-
-let rec string_of_env' ac = function
+  | TreeVal t -> (
+    let rec string_of_treeVal = function
+      | Node (v, left, right) ->
+        "Node(" ^ string_of_expval v ^ ", " ^ string_of_treeVal left ^ ", " ^ string_of_treeVal right ^ ")"
+      | Empty -> "Empty"
+    in 
+    string_of_treeVal t
+  )
+  | ProcVal (id,body,env) -> "ProcVal ("^ id ^","^string_of_expval
+  body^","^ string_of_env' []
+                env^")"
+and
+  string_of_env' ac = function
   | EmptyEnv ->  "["^String.concat ",\n" ac^"]"
   | ExtendEnv(id,v,env) -> string_of_env' ((id^":="^string_of_expval v)::ac) env
 
@@ -123,3 +165,4 @@ let string_of_env : string ea_result =
   match env with
   | EmptyEnv -> Ok ">>Environment:\nEmpty"
   | _ -> Ok (">>Environment:\n"^ string_of_env' [] env)
+
